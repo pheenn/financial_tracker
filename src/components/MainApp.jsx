@@ -646,22 +646,22 @@ function MainApp() {
 
   const renderHome = () => (
     <div className="space-y-5">
-      <Card className="overflow-hidden bg-stone-900 p-6 text-white dark:bg-black sm:p-7">
+      <Card className="overflow-hidden border border-stone-200 bg-white p-6 text-stone-800 shadow-sm dark:border-stone-800 dark:bg-stone-950 dark:text-stone-100 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs font-black uppercase tracking-[0.2em] text-stone-400">Available balance</div>
-            <div className="mt-2 text-4xl font-black tracking-tight sm:text-5xl">₱{actualLeftover.toLocaleString()}</div>
-            <div className="mt-2 text-sm font-medium text-stone-400">After bills and daily expenses for {getMonthName(currentViewMonth)}</div>
+            <div className="text-xs font-black uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">Available balance</div>
+            <div className="mt-2 text-4xl font-black tracking-tight text-stone-900 dark:text-white sm:text-5xl">₱{actualLeftover.toLocaleString()}</div>
+            <div className="mt-2 text-sm font-medium text-stone-500 dark:text-stone-400">After bills and daily expenses for {getMonthName(currentViewMonth)}</div>
           </div>
-          <div className="rounded-2xl bg-white/10 p-3">
-            <Wallet size={22} className="text-yellow-400" />
+          <div className="rounded-2xl bg-amber-50 p-3 dark:bg-white/10">
+            <Wallet size={22} className="text-amber-600 dark:text-yellow-400" />
           </div>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-stone-500">Allowance</div><div className="mt-1 font-black">₱{currentMonthAllowance.toLocaleString()}</div></div>
-          <div className="rounded-2xl bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-stone-500">Bills</div><div className="mt-1 font-black">₱{totalBillsAmount.toLocaleString()}</div></div>
-          <div className="rounded-2xl bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-stone-500">Expenses</div><div className="mt-1 font-black">₱{totalDailyExpenses.toLocaleString()}</div></div>
-          <div className="rounded-2xl bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-stone-500">Debt left</div><div className="mt-1 font-black">₱{grandTotalDebt.toLocaleString()}</div></div>
+          <div className="rounded-2xl bg-stone-100 p-3 dark:bg-white/5"><div className="text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-500">Allowance</div><div className="mt-1 font-black text-stone-800 dark:text-white">₱{currentMonthAllowance.toLocaleString()}</div></div>
+          <div className="rounded-2xl bg-stone-100 p-3 dark:bg-white/5"><div className="text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-500">Bills</div><div className="mt-1 font-black text-stone-800 dark:text-white">₱{totalBillsAmount.toLocaleString()}</div></div>
+          <div className="rounded-2xl bg-stone-100 p-3 dark:bg-white/5"><div className="text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-500">Expenses</div><div className="mt-1 font-black text-stone-800 dark:text-white">₱{totalDailyExpenses.toLocaleString()}</div></div>
+          <div className="rounded-2xl bg-stone-100 p-3 dark:bg-white/5"><div className="text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-500">Debt left</div><div className="mt-1 font-black text-stone-800 dark:text-white">₱{grandTotalDebt.toLocaleString()}</div></div>
         </div>
       </Card>
 
@@ -1116,13 +1116,26 @@ function MainApp() {
           </div>
         </main>
 
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 backdrop-blur-xl dark:border-stone-800 dark:bg-stone-950/95 lg:hidden">
-          <div className="mx-auto flex max-w-md items-center justify-between gap-1">
-            {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => navTo(id)} className={`flex min-h-14 flex-1 flex-col items-center justify-center rounded-2xl text-[10px] font-black ${activeScreen === id ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900' : 'text-stone-400'}`}>
-                <Icon size={18} /><span className="mt-1">{label}</span>
-              </button>
-            ))}
+        <nav className="ft-bottom-nav lg:hidden" aria-label="Primary navigation">
+          <div className="ft-bottom-nav__inner">
+            {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+              const isActive = activeScreen === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => navTo(id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  aria-label={label}
+                  className={`ft-bottom-nav__item ${isActive ? 'ft-bottom-nav__item--active' : ''}`}
+                >
+                  <span className="ft-bottom-nav__icon" aria-hidden="true">
+                    <Icon size={19} strokeWidth={isActive ? 2.25 : 2} />
+                  </span>
+                  <span className="ft-bottom-nav__label">{label}</span>
+                </button>
+              );
+            })}
           </div>
         </nav>
 
