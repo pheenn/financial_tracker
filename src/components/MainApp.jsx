@@ -169,6 +169,17 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    const isDark = data.theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+
+    return () => {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.style.colorScheme = '';
+    };
+  }, [data.theme]);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeScreen]);
 
@@ -664,7 +675,7 @@ function MainApp() {
         <Card className="p-5">
           <SectionTitle icon={PieChart} title="Budget mix" subtitle="Where this month's planned funds are going" />
           <div className="flex flex-col items-center gap-6 sm:flex-row">
-            <div className="relative h-40 w-40 shrink-0 rounded-full" style={{ background: `conic-gradient(#3b82f6 0% ${pRent}%, #f43f5e ${pRent}% ${pRent + pDebt}%, #f59e0b ${pRent + pDebt}% ${pRent + pDebt + pExp}%, #10b981 ${pRent + pDebt + pExp}% 100%)` }}>
+            <div className="relative h-40 w-40 shrink-0 rounded-full" style={{ background: `conic-gradient(var(--ft-chart-rent) 0% ${pRent}%, var(--ft-chart-debt) ${pRent}% ${pRent + pDebt}%, var(--ft-chart-expense) ${pRent + pDebt}% ${pRent + pDebt + pExp}%, var(--ft-chart-remaining) ${pRent + pDebt + pExp}% 100%)` }}>
               <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-white shadow-inner dark:bg-stone-900">
                 <div className="text-xl font-black">{isOverbudget ? '!' : 'OK'}</div>
                 <div className="text-[10px] font-black uppercase tracking-wider text-stone-400">Budget</div>
@@ -997,7 +1008,7 @@ function MainApp() {
 
       <Card className="p-5">
         <SectionTitle icon={Info} title="Strategy / notes" subtitle="Your planning notes are still saved with the same data key." />
-        <textarea value={data.strategyNote || ''} onChange={(e) => setData((prev) => ({ ...prev, strategyNote: e.target.value }))} rows={6} placeholder="Write your financial strategy here..." className="w-full resize-none rounded-2xl border border-stone-200 bg-[#fffdf0] p-4 text-sm font-medium leading-6 outline-none focus:border-yellow-400 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-200" />
+        <textarea value={data.strategyNote || ''} onChange={(e) => setData((prev) => ({ ...prev, strategyNote: e.target.value }))} rows={6} placeholder="Write your financial strategy here..." className="w-full resize-none rounded-2xl border border-stone-200 bg-amber-50/80 p-4 text-sm font-medium leading-6 outline-none focus:border-yellow-400 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-200" />
       </Card>
 
       <Card className="p-5">
@@ -1045,11 +1056,11 @@ function MainApp() {
   );
 
   const themeClass = data.theme === 'dark' ? 'dark' : '';
-  const background = data.theme === 'dark' ? '#0b0a09' : '#f7f4ed';
-  const grid = data.theme === 'dark' ? '#262220' : '#e7e2d8';
+  const background = 'var(--ft-page-bg)';
+  const grid = 'var(--ft-grid)';
 
   return (
-    <div className={themeClass}>
+    <div className={themeClass} data-theme={data.theme}>
       <div
         className="min-h-screen overflow-x-hidden font-sans text-stone-800 transition-colors duration-300 dark:text-stone-100"
         style={{

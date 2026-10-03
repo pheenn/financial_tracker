@@ -1,12 +1,132 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Financial Tracker neutral palette */
+  --color-stone-50: #fbfaf6;
+  --color-stone-100: #f3f0e8;
+  --color-stone-200: #e5dfd2;
+  --color-stone-300: #d4ccbc;
+  --color-stone-400: #aaa18f;
+  --color-stone-500: #7c7364;
+  --color-stone-600: #5f574a;
+  --color-stone-700: #484136;
+  --color-stone-800: #332e27;
+  --color-stone-900: #231f1a;
+  --color-stone-950: #15120f;
+
+  /* Gold brand accent */
+  --color-yellow-50: #fffbed;
+  --color-yellow-100: #fff2b8;
+  --color-yellow-200: #ffe58a;
+  --color-yellow-300: #fbd45a;
+  --color-yellow-400: #eeb83d;
+  --color-yellow-500: #d79a1e;
+  --color-yellow-600: #b97b0c;
+  --color-yellow-700: #8e5e08;
+  --color-yellow-800: #684608;
+  --color-yellow-900: #4a3207;
+  --color-yellow-950: #2d1e04;
+
+  /* Semantic success */
+  --color-emerald-50: #edf9f3;
+  --color-emerald-100: #d4f1e2;
+  --color-emerald-200: #a9e3c6;
+  --color-emerald-300: #73d0a6;
+  --color-emerald-400: #3db982;
+  --color-emerald-500: #239a68;
+  --color-emerald-600: #197c54;
+  --color-emerald-700: #156447;
+  --color-emerald-800: #124f3a;
+  --color-emerald-900: #0e4231;
+  --color-emerald-950: #092b20;
+
+  /* Semantic danger */
+  --color-rose-50: #fff0f0;
+  --color-rose-100: #ffe0e0;
+  --color-rose-200: #ffc4c5;
+  --color-rose-300: #ff9fa2;
+  --color-rose-400: #eb747a;
+  --color-rose-500: #d85c64;
+  --color-rose-600: #bc404d;
+  --color-rose-700: #983440;
+  --color-rose-800: #7c2d38;
+  --color-rose-900: #672933;
+  --color-rose-950: #3c151c;
+
+  /* Secondary accent */
+  --color-amber-50: #fff8e6;
+  --color-amber-100: #ffedbd;
+  --color-amber-200: #ffdc7a;
+  --color-amber-300: #f7c44d;
+  --color-amber-400: #e5a72c;
+  --color-amber-500: #cd8c16;
+  --color-amber-600: #aa6e0e;
+  --color-amber-700: #87550b;
+  --color-amber-800: #6c430d;
+  --color-amber-900: #593710;
+  --color-amber-950: #382109;
+
+  /* Info / chart support */
+  --color-blue-50: #edf7f7;
+  --color-blue-100: #d7eeee;
+  --color-blue-200: #b2dddd;
+  --color-blue-300: #7bc4c2;
+  --color-blue-400: #4aa8a5;
+  --color-blue-500: #2f8785;
+  --color-blue-600: #246e6c;
+  --color-blue-700: #205a59;
+  --color-blue-800: #1d4847;
+  --color-blue-900: #1b3c3b;
+  --color-blue-950: #0e2524;
+}
+
+:root {
+  color-scheme: light;
+  --ft-page-bg: #f7f3ea;
+  --ft-grid: #e5dfd3;
+  --ft-chart-rent: #2f8785;
+  --ft-chart-debt: #d85c64;
+  --ft-chart-expense: #cd8c16;
+  --ft-chart-remaining: #239a68;
+}
+
+.dark {
+  color-scheme: dark;
+  --ft-page-bg: #0f0e0c;
+  --ft-grid: #27231e;
+  --ft-chart-rent: #4aa8a5;
+  --ft-chart-debt: #eb747a;
+  --ft-chart-expense: #e5a72c;
+  --ft-chart-remaining: #3db982;
+}
+
 html,
 body,
 #root {
   min-height: 100%;
 }
 
+html {
+  background: var(--ft-page-bg);
+}
+
 body {
   margin: 0;
   min-width: 320px;
+  background: var(--ft-page-bg);
+  color: var(--color-stone-800);
+  transition: background-color 300ms ease, color 300ms ease;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
 }

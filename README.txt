@@ -1,29 +1,17 @@
-Financial Tracker — App Icon + Bill Double-Count Fix
+Financial Tracker theme + icon update
 
-Included:
-- MainApp.jsx — excludes auto-created Bill transactions from daily spending totals, preventing paid bills from being counted twice.
-- SwipeableLogItem.jsx — preserved from the current transaction update.
-- setup_wallet_icon.sh — uses ~/storage/downloads/Wallet.png as the Android app icon.
+Changes:
+- Redesigned the shared Tailwind color palette for a warmer, more cohesive finance-app theme.
+- Added a class-based dark-mode variant so the Light/Dark buttons control the app consistently.
+- Synced the selected theme to the document root and browser color-scheme.
+- Replaced hard-coded chart colors with theme-aware variables.
+- Switched the Wallet app icon to Android adaptive icons so it uses the available icon area more effectively.
+- The icon setup script trims transparent borders when Pillow is available and generates density-specific fallback icons.
 
-Apply the React fix:
-  cd ~/financial-tracker
-  rm -rf ~/ft-update
-  mkdir -p ~/ft-update
-  unzip -o ~/storage/downloads/FinancialTracker-Icon-BillFix.zip -d ~/ft-update
-  cp ~/ft-update/MainApp.jsx src/components/MainApp.jsx
-  cp ~/ft-update/SwipeableLogItem.jsx src/components/SwipeableLogItem.jsx
-  cp ~/ft-update/setup_wallet_icon.sh ~/ft-update/README.txt ./
-  rm -rf ~/ft-update
-
-Configure the icon:
-  cd ~/financial-tracker
-  ./setup_wallet_icon.sh
-
-Then build/check:
-  npm run build
-  npx cap sync android
-  cd android
-  ./gradlew assembleDebug
-
-The app icon source is read directly from:
-  ~/storage/downloads/Wallet.png
+Apply:
+1. Copy src/styles/index.css and src/components/MainApp.jsx into the project.
+2. Replace setup_wallet_icon.sh.
+3. Run: chmod +x setup_wallet_icon.sh
+4. Run: ./setup_wallet_icon.sh
+5. Run: npm run build
+6. Then sync/build Android as usual.
