@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Edit, Trash } from 'lucide-react';
+import { Edit, Trash, ArrowLeftRight } from 'lucide-react';
 
 const formatPrice = (value) => `₱${Number(value || 0).toLocaleString()}`;
 
@@ -50,6 +50,7 @@ export const SwipeableLogItem = ({ log, onEdit, onDelete }) => {
   const items = groupedLogs.flatMap((item) => getItems(item));
   const total = groupedLogs.reduce((sum, item) => sum + Number(item.cost || 0), 0);
   const isIncome = groupedLogs.every((item) => item.type === 'income');
+  const isTransfer = groupedLogs.every((item) => item.type === 'transfer');
 
   const onStart = (clientX) => {
     startX.current = clientX;
@@ -98,14 +99,20 @@ export const SwipeableLogItem = ({ log, onEdit, onDelete }) => {
         {/* Header: Date + Total */}
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-stone-100 pb-2 dark:border-stone-800">
           <span className="min-w-0 truncate font-mono text-xs font-bold text-stone-400 dark:text-stone-500">{log.date}</span>
-          <span className={`shrink-0 text-sm font-black ${isIncome ? 'text-emerald-500' : 'text-amber-600 dark:text-amber-400'}`}>
-            {isIncome ? '+' : ''}{formatPrice(total)}
+          <span className={`shrink-0 text-sm font-black ${isTransfer ? 'text-blue-600 dark:text-blue-400' : isIncome ? 'text-emerald-500' : 'text-amber-600 dark:text-amber-400'}`}>
+            {isTransfer ? '' : isIncome ? '+' : ''}{formatPrice(total)}
           </span>
         </div>
 
-        {/* Item rows: Quantity + Name + Price */}
+        {/* Item rows */}
         <div className="mt-2 min-w-0 space-y-1.5">
-          {items.map((item, index) => (
+          {isTransfer ? groupedLogs.map((item, index) => (
+            <div key={`${log.id}-transfer-${index}`} className="flex items-center gap-2 text-[13px] sm:text-sm">
+              <ArrowLeftRight size={15} className="shrink-0 text-blue-500" />
+              <span className="min-w-0 break-words font-semibold text-stone-700 dark:text-stone-300">{item.text}</span>
+            </div>
+          )) : null}
+          {!isTransfer && items.map((item, index) => (
             <div key={`${log.id}-${index}`} className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 text-[13px] sm:text-sm">
               <span className="shrink-0 font-mono font-black text-stone-500 dark:text-stone-400">{item.quantity != null ? item.quantity : ''}</span>
               <span className="min-w-0 break-words text-stone-700 dark:text-stone-300">{item.name || 'Unnamed item'}</span>

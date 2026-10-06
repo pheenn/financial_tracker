@@ -38,6 +38,7 @@ import { SwipeableLogItem } from './SwipeableLogItem';
 import { SwipeableBillItem } from './SwipeableBillItem';
 import { SwipeableHabitTracker } from './SwipeableHabitTracker';
 import { setupDailyReminder } from '../utils/dailyReminder';
+import { FinanceHub } from './FinanceHub';
 
 const getCurrentMonthStr = () => {
   const date = new Date();
@@ -61,25 +62,23 @@ const getMotivation = (days) => {
   return `Day ${days} clean. You are investing in your future peace! Keep it up.`;
 };
 
-const DEFAULT_DATA = {
-  habit: { name: 'Gambling', daysFree: 3, lastIncrementDate: null },
-  baseAllowance: 5000,
-  wallets: { cash: 0, gcash: 0 },
+const createEmptyData = () => ({
+  habit: { name: 'Daily Progress', daysFree: 0, lastIncrementDate: null },
+  baseAllowance: 0,
+  wallets: {},
+  accounts: [],
+  budgets: [],
+  recurringTransactions: [],
+  savingsGoals: [],
+  loans: [],
   theme: 'light',
   autoBillTransactions: true,
   strategyNote: '',
-  bills: [
-    { id: 1, name: 'bill ease', amount: 451, totalInstallments: 6, startMonth: '2026-10', dueDate: 7 },
-    { id: 2, name: 'megapeso', amount: 950, totalInstallments: 1, startMonth: '2026-10', dueDate: 9 },
-    { id: 3, name: 'mobilis cash', amount: 272, totalInstallments: 1, startMonth: '2026-10', dueDate: 25 },
-    { id: 4, name: 'maya credit', amount: 560, totalInstallments: 1, startMonth: '2026-10', dueDate: 2 },
-    { id: 5, name: 'G cash loan', amount: 355, totalInstallments: 5, startMonth: '2026-11', dueDate: 2 },
-    { id: 6, name: 'rent sa bh', amount: 1700, totalInstallments: 999, startMonth: '2026-10', dueDate: 1 },
-    { id: 7, name: 'megapeso (new)', amount: 236, totalInstallments: 2, startMonth: '2026-11', dueDate: 9 },
-  ],
+  bills: [],
   paidRecords: [],
+  billPayments: {},
   dailyLogs: [],
-};
+});
 
 const QUANTITY_CATEGORIES = new Set(['Food', 'Wants', 'Other']);
 
@@ -87,7 +86,7 @@ const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'transactions', label: 'Transactions', icon: ReceiptText },
   { id: 'bills', label: 'Bills', icon: CreditCard },
-  { id: 'progress', label: 'Progress', icon: BarChart3 },
+  { id: 'progress', label: 'Planning', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -114,26 +113,47 @@ function MainApp() {
   const [data, setData] = useState(() => {
     try {
       const saved = localStorage.getItem('financeTrackerData');
-      if (!saved) return DEFAULT_DATA;
+      if (!saved) return createEmptyData();
       const parsed = JSON.parse(saved);
       if (parsed.baseAllowance === undefined) parsed.baseAllowance = parsed.allowance || 5000;
       if (!parsed.wallets) parsed.wallets = { cash: 0, gcash: 0 };
+      if (!Array.isArray(parsed.accounts) || !parsed.accounts.length) parsed.accounts = [
+        { id: 'cash', name: 'Cash', type: 'Cash', openingBalance: Number(parsed.wallets?.cash || 0) },
+        { id: 'gcash', name: 'GCash', type: 'E-wallet', openingBalance: Number(parsed.wallets?.gcash || 0) },
+      ];
+      if (!Array.isArray(parsed.budgets)) parsed.budgets = [];
+      if (!Array.isArray(parsed.recurringTransactions)) parsed.recurringTransactions = [];
+      if (!Array.isArray(parsed.savingsGoals)) parsed.savingsGoals = [];
+      if (!Array.isArray(parsed.loans)) parsed.loans = [];
       if (!parsed.theme) parsed.theme = 'light';
       if (parsed.autoBillTransactions === undefined) parsed.autoBillTransactions = true;
       if (!Array.isArray(parsed.bills)) parsed.bills = [];
       if (!Array.isArray(parsed.paidRecords)) parsed.paidRecords = [];
       if (!Array.isArray(parsed.dailyLogs)) parsed.dailyLogs = [];
-      if (!parsed.habit) parsed.habit = { ...DEFAULT_DATA.habit };
+      if (!parsed.habit) parsed.habit = { name: '', daysFree: 0, lastIncrementDate: null };
+      if (!parsed.billPayments || typeof parsed.billPayments !== 'object' || Array.isArray(parsed.billPayments)) parsed.billPayments = {};
+      (parsed.paidRecords || []).forEach((recordKey) => {
+        if (parsed.billPayments[recordKey]) return;
+        const linkedLog = parsed.dailyLogs.find((log) => log.billRecordKey === recordKey);
+        const fallbackDate = linkedLog?.paidDate || getLocalTodayStr();
+        parsed.billPayments[recordKey] = {
+          paidDate: fallbackDate,
+          paidMonth: linkedLog?.monthStr || fallbackDate.slice(0, 7),
+          scheduledMonth: recordKey.split('-').slice(1).join('-'),
+          amount: Number(linkedLog?.cost || 0),
+        };
+      });
       if (parsed.dailyLogs) {
         parsed.dailyLogs = parsed.dailyLogs.map((log) => ({
           ...log,
           type: log.type || 'expense',
           category: log.category || 'Food',
+          accountId: log.accountId || 'cash',
         }));
       }
       return parsed;
     } catch {
-      return DEFAULT_DATA;
+      return createEmptyData();
     }
   });
 
@@ -152,12 +172,15 @@ function MainApp() {
   const [newLogQuantity, setNewLogQuantity] = useState('1');
   const [newLogDate, setNewLogDate] = useState(getLocalTodayStr());
   const [newLogCost, setNewLogCost] = useState('');
+  const [newLogAccountId, setNewLogAccountId] = useState('cash');
   const [notification, setNotification] = useState('');
   const [notificationType, setNotificationType] = useState('success');
   const [showDebtBreakdown, setShowDebtBreakdown] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [pendingDeleteTransactionIds, setPendingDeleteTransactionIds] = useState([]);
   const [pendingDeleteBillId, setPendingDeleteBillId] = useState(null);
+  const [logPage, setLogPage] = useState(1);
+  const LOGS_PER_PAGE = 10;
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -178,6 +201,12 @@ function MainApp() {
       document.documentElement.style.colorScheme = '';
     };
   }, [data.theme]);
+
+  useEffect(() => {
+    if (data.accounts?.length && !data.accounts.some((account) => account.id === newLogAccountId)) {
+      setNewLogAccountId(data.accounts[0].id);
+    }
+  }, [data.accounts, newLogAccountId]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -223,6 +252,8 @@ function MainApp() {
   const totalBillsAmount = activeBills.reduce((sum, bill) => sum + Number(bill.amount || 0), 0);
   const paidBills = activeBills.filter((b) => b.isPaid);
   const totalPaidAmount = paidBills.reduce((sum, bill) => sum + Number(bill.amount || 0), 0);
+  const billPaymentsThisMonth = Object.values(data.billPayments || {}).filter((payment) => payment?.paidMonth === currentViewMonth);
+  const billPaymentsThisMonthAmount = billPaymentsThisMonth.reduce((sum, payment) => sum + Number(payment?.amount || 0), 0);
   const currentMonthLogs = data.dailyLogs.filter(
     (log) => log.monthStr === currentViewMonth || (!log.monthStr && currentViewMonth === getCurrentMonthStr()),
   );
@@ -232,13 +263,11 @@ function MainApp() {
   const currentMonthAllowance = baseAllowanceAmount + totalExtraIncome;
   const extraAllowancePercent = baseAllowanceAmount > 0 ? (totalExtraIncome / baseAllowanceAmount) * 100 : 0;
   const quantityApplies = newLogType === 'expense' && QUANTITY_CATEGORIES.has(newLogCategory);
-  const remainingAllowance = currentMonthAllowance - totalPaidAmount;
+  const remainingAllowance = currentMonthAllowance - billPaymentsThisMonthAmount;
   const actualLeftover = remainingAllowance - totalDailyExpenses;
   const chartRentAmount = activeBills.filter((b) => b.name.toLowerCase().includes('rent')).reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const chartDebtAmount = activeBills.filter((b) => !b.name.toLowerCase().includes('rent')).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const paidRentAmount = paidBills.filter((b) => b.name.toLowerCase().includes('rent')).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const paidDebtAmount = paidBills.filter((b) => !b.name.toLowerCase().includes('rent')).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const paidBillsSpending = paidRentAmount + paidDebtAmount;
+  const paidBillsSpending = billPaymentsThisMonthAmount;
   const trueTotalSpent = paidBillsSpending + totalDailyExpenses;
   const chartDenominator = Math.max(currentMonthAllowance, trueTotalSpent) || 1;
   const isOverbudget = trueTotalSpent > currentMonthAllowance;
@@ -287,7 +316,9 @@ function MainApp() {
   const groupTransactions = (logs) => {
     const groups = new Map();
     logs.forEach((log) => {
-      const key = `${log.monthStr || currentViewMonth}|${log.date || ''}|${log.category || (log.type === 'income' ? 'Income' : 'Other')}`;
+      const key = log.type === 'income'
+        ? `${log.monthStr || currentViewMonth}|${log.date || ''}|Income|income`
+        : `${log.monthStr || currentViewMonth}|${log.date || ''}|${log.category || 'Other'}|${log.type || 'expense'}|${log.accountId || 'cash'}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(log);
     });
@@ -299,6 +330,13 @@ function MainApp() {
 
   const filteredLogs = selectedCategoryFilter ? sortedCurrentMonthLogs.filter((log) => log.category === selectedCategoryFilter) : sortedCurrentMonthLogs;
   const displayLogs = groupTransactions(filteredLogs);
+  const totalLogPages = Math.max(1, Math.ceil(displayLogs.length / LOGS_PER_PAGE));
+  const safeLogPage = Math.min(logPage, totalLogPages);
+  const paginatedLogs = displayLogs.slice((safeLogPage - 1) * LOGS_PER_PAGE, safeLogPage * LOGS_PER_PAGE);
+
+  useEffect(() => {
+    setLogPage(1);
+  }, [currentViewMonth, selectedCategoryFilter]);
 
   const recentLogs = sortedCurrentMonthLogs.slice(0, 5);
 
@@ -310,55 +348,71 @@ function MainApp() {
     setTimeout(() => setNotification(''), 3200);
   };
 
-  const getBillTransactionDate = (monthStr, dueDate) => {
-    const { year, month } = parseYearMonth(monthStr);
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const safeDay = Math.min(Math.max(Number(dueDate) || 1, 1), daysInMonth);
-    return `${monthNames[month - 1]} ${safeDay}`;
+  const getDateParts = (dateStr) => {
+    const [y, m, d] = String(dateStr || '').split('-').map(Number);
+    return { year: y, month: m, day: d };
   };
 
-  const buildBillTransaction = (bill, monthStr) => {
+  const labelLocalDate = (dateStr) => {
+    const { year, month, day } = getDateParts(dateStr);
+    if (!year || !month || !day) return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const buildBillTransaction = (bill, scheduledMonth, paidDate, accountId = data.accounts?.[0]?.id || 'cash') => {
     const amount = Number(bill.amount || 0);
-    const recordKey = `${bill.id}-${monthStr}`;
+    const recordKey = `${bill.id}-${scheduledMonth}`;
     return {
       id: Date.now(),
-      date: getBillTransactionDate(monthStr, bill.dueDate),
+      date: labelLocalDate(paidDate),
+      paidDate,
+      scheduledMonth,
       text: `${bill.name} ${amount.toLocaleString()}`,
       cost: amount,
-      monthStr,
+      monthStr: String(paidDate).slice(0, 7),
       type: 'expense',
       category: 'Bill',
       isBillAutoTransaction: true,
       billId: bill.id,
       billRecordKey: recordKey,
+      accountId,
     };
   };
 
   const toggleBillPaid = (billId) => {
     const recordKey = `${billId}-${currentViewMonth}`;
+    const today = getLocalTodayStr();
     setData((prev) => {
       const isCurrentlyPaid = prev.paidRecords.includes(recordKey);
       const bill = prev.bills.find((item) => item.id === billId);
       if (!bill) return prev;
 
       if (isCurrentlyPaid) {
+        const billPayments = { ...(prev.billPayments || {}) };
+        delete billPayments[recordKey];
         return {
           ...prev,
           paidRecords: prev.paidRecords.filter((key) => key !== recordKey),
-          // Always remove the linked auto transaction when a paid bill is unmarked.
+          billPayments,
           dailyLogs: prev.dailyLogs.filter((log) => log.billRecordKey !== recordKey),
         };
       }
 
+      const payment = {
+        paidDate: today,
+        paidMonth: today.slice(0, 7),
+        scheduledMonth: currentViewMonth,
+        amount: Number(bill.amount || 0),
+      };
       const shouldAutoAdd = prev.autoBillTransactions !== false;
       const alreadyHasAutoTransaction = prev.dailyLogs.some((log) => log.billRecordKey === recordKey);
 
       return {
         ...prev,
         paidRecords: [...prev.paidRecords, recordKey],
+        billPayments: { ...(prev.billPayments || {}), [recordKey]: payment },
         dailyLogs: shouldAutoAdd && !alreadyHasAutoTransaction
-          ? [...prev.dailyLogs, buildBillTransaction(bill, currentViewMonth)]
+          ? [...prev.dailyLogs, buildBillTransaction(bill, currentViewMonth, today, prev.accounts?.[0]?.id || 'cash')]
           : prev.dailyLogs,
       };
     });
@@ -366,11 +420,10 @@ function MainApp() {
     const willBePaid = !data.paidRecords.includes(recordKey);
     showNotification(
       willBePaid
-        ? (data.autoBillTransactions !== false ? 'Bill marked paid and transaction added.' : 'Bill successfully marked paid.')
+        ? (data.autoBillTransactions !== false ? 'Bill marked paid. Payment recorded today.' : 'Bill successfully marked paid.')
         : 'Bill marked unpaid and linked transaction removed.'
     );
   };
-
 
   const handleEditBillClick = (bill) => {
     setEditingBill(bill);
@@ -404,19 +457,25 @@ function MainApp() {
     setNewLogQuantity('1');
     setNewLogDate(getLocalTodayStr());
     setNewLogCost('');
+    setNewLogAccountId(data.accounts?.[0]?.id || 'cash');
     setEditItems([]);
   };
 
   const handleEditLogClick = (log) => {
+    if (log.type === 'transfer') {
+      showNotification('Transfers are managed from Planning → Accounts.', 'error');
+      return;
+    }
     const logs = Array.isArray(log.groupedLogs) ? log.groupedLogs : [log];
     setEditingLogId(logs.map((item) => item.id));
-    setEditItems(logs.map((item) => ({ id: item.id, name: item.name || String(item.text || '').split('\n')[0].trim(), text: item.text || '', quantity: item.quantity == null ? '1' : String(item.quantity), cost: item.cost == null ? '' : String(item.cost) })));
+    setEditItems(logs.map((item) => ({ id: item.id, name: item.name || String(item.text || '').split('\n')[0].trim(), text: item.text || '', quantity: item.quantity == null ? '1' : String(item.quantity), cost: item.cost == null ? '' : String(item.cost), accountId: item.accountId || data.accounts?.[0]?.id || 'cash' })));
     setNewLogType(log.type || 'expense');
     setNewLogCategory(log.category || 'Food');
     setNewLogText(log.text || '');
     setNewLogName(log.name || '');
     setNewLogQuantity(log.quantity == null ? '1' : String(log.quantity));
     setNewLogCost(log.cost === 0 ? '' : String(log.cost || ''));
+    setNewLogAccountId(log.accountId || data.accounts?.[0]?.id || 'cash');
     const month = log.monthStr || currentViewMonth;
     const [, dayRaw] = String(log.date || '').match(/^(?:[A-Za-z]{3})\s+(\d{1,2})$/) || [];
     const [year, monthNumber] = month.split('-');
@@ -474,7 +533,7 @@ function MainApp() {
           const existing = prev.dailyLogs.find((log) => log.id === item.id);
           const itemName = newLogType === 'expense' ? String(item.name || '').trim() : String(item.text || '').trim();
           const itemQuantity = newLogType === 'expense' && quantityApplies ? Math.max(1, Number(item.quantity) || 1) : null;
-          return { ...(existing || {}), id: existing?.id ?? Date.now() + index, date: dateToUse, text: newLogType === 'expense' ? `${quantityApplies ? `${itemQuantity} ` : ''}${itemName}` : itemName, ...(newLogType === 'expense' ? { name: itemName, ...(quantityApplies ? { quantity: itemQuantity } : {}) } : {}), cost: Number(item.cost) || 0, monthStr: logMonthStr, type: newLogType, category: targetCategory };
+          return { ...(existing || {}), id: existing?.id ?? Date.now() + index, date: dateToUse, text: newLogType === 'expense' ? `${quantityApplies ? `${itemQuantity} ` : ''}${itemName}` : itemName, ...(newLogType === 'expense' ? { name: itemName, ...(quantityApplies ? { quantity: itemQuantity } : {}) } : {}), cost: Number(item.cost) || 0, monthStr: logMonthStr, type: newLogType, category: targetCategory, accountId: item.accountId || newLogAccountId };
         });
         return { ...prev, dailyLogs: [...updatedLogs, ...replacementLogs] };
       }
@@ -492,6 +551,7 @@ function MainApp() {
             monthStr: logMonthStr,
             type: newLogType,
             category: targetCategory,
+            accountId: newLogAccountId || data.accounts?.[0]?.id || 'cash',
           },
         ],
       };
@@ -542,6 +602,7 @@ function MainApp() {
       ...prev,
       bills: prev.bills.filter((b) => b.id !== billId),
       paidRecords: prev.paidRecords.filter((record) => !record.startsWith(`${billId}-`)),
+      billPayments: Object.fromEntries(Object.entries(prev.billPayments || {}).filter(([record]) => !record.startsWith(`${billId}-`))),
       dailyLogs: prev.dailyLogs.filter((log) => log.billId !== billId),
     }));
     setPendingDeleteBillId(null);
@@ -550,7 +611,7 @@ function MainApp() {
   };
 
   const confirmResetData = () => {
-    const freshData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    const freshData = createEmptyData();
     setData(freshData);
     setCurrentViewMonth(getCurrentMonthStr());
     setSelectedCategoryFilter(null);
@@ -606,7 +667,7 @@ function MainApp() {
     home: { title: 'Home', subtitle: 'Your money at a glance' },
     transactions: { title: 'Transactions', subtitle: `${getMonthName(currentViewMonth)} activity` },
     bills: { title: 'Bills', subtitle: `${getMonthName(currentViewMonth)} obligations` },
-    progress: { title: 'Progress', subtitle: 'Debt and personal progress' },
+    progress: { title: 'Planning', subtitle: 'Accounts, budgets, goals, debt and reports' },
     settings: { title: 'Settings', subtitle: 'Customize and manage your data' },
   };
 
@@ -665,10 +726,16 @@ function MainApp() {
         </div>
       </Card>
 
+      {renderDebtProgress(false)}
+      <Card className="p-5 sm:p-6">
+        <SectionTitle icon={Trophy} title="Daily progress" subtitle="Keep your daily progress visible from Home." />
+        <SwipeableHabitTracker habit={data.habit} onIncrement={handleIncrementHabit} onReset={handleResetHabit} />
+      </Card>
+
       <Card className="p-5">
         <SectionTitle icon={TrendingDown} title="Spending" subtitle="Bills marked paid + daily expenses" />
         <div className={`text-3xl font-black ${isOverbudget ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>₱{trueTotalSpent.toLocaleString()}</div>
-        <div className="mt-2 text-xs font-semibold text-stone-400">Paid bills: ₱{paidBillsSpending.toLocaleString()} • Daily: ₱{totalDailyExpenses.toLocaleString()}</div>
+        <div className="mt-2 text-xs font-semibold text-stone-400">Bill payments: ₱{paidBillsSpending.toLocaleString()} • Daily: ₱{totalDailyExpenses.toLocaleString()}</div>
       </Card>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -761,6 +828,13 @@ function MainApp() {
           <button type="button" onClick={() => setNewLogType('income')} className={`min-h-11 rounded-xl text-sm font-black ${newLogType === 'income' ? 'bg-white text-emerald-700 shadow-sm dark:bg-stone-800 dark:text-emerald-400' : 'text-stone-500'}`}><ArrowUp size={15} className="mr-1 inline" />Extra income</button>
         </div>
 
+        <label className="block text-xs font-black uppercase tracking-wider text-stone-400">Account
+          <select value={newLogAccountId} onChange={(e) => setNewLogAccountId(e.target.value)} disabled={!data.accounts?.length} className="mt-2 block w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm font-semibold outline-none focus:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stone-700 dark:bg-stone-950 dark:text-white">
+            {data.accounts?.length ? data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>) : <option value="">No accounts available</option>}
+          </select>
+          {!data.accounts?.length && <span className="mt-2 block rounded-xl bg-yellow-50 px-3 py-2 text-[11px] font-bold normal-case tracking-normal text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200">Add an account in Planning → Accounts before recording a transaction.</span>}
+        </label>
+
         {newLogType === 'expense' ? (
           <>
             <div>
@@ -781,15 +855,24 @@ function MainApp() {
 
             {editingLogId ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3"><div className="text-[10px] font-black uppercase tracking-widest text-stone-400">Transactions on this date</div><button type="button" onClick={() => setEditItems((items) => [...items, { id: null, name: '', quantity: '1', cost: '' }])} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-black text-stone-600 dark:bg-stone-800 dark:text-stone-300"><Plus size={13} className="mr-1 inline" />Add item</button></div>
+                <div className="flex items-center justify-between gap-3"><div className="text-[10px] font-black uppercase tracking-widest text-stone-400">Transactions on this date</div><button type="button" onClick={() => setEditItems((items) => [...items, { id: null, name: '', text: '', quantity: '1', cost: '', accountId: newLogAccountId }])} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-black text-stone-600 dark:bg-stone-800 dark:text-stone-300"><Plus size={13} className="mr-1 inline" />Add item</button></div>
                 {editItems.map((item, index) => (
                   <div key={item.id ?? `new-${index}`} className="rounded-2xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-800 dark:bg-stone-950">
-                    <div className={`grid gap-3 ${quantityApplies ? 'sm:grid-cols-[90px_minmax(0,1fr)_130px_auto]' : 'sm:grid-cols-[minmax(0,1fr)_130px_auto]'}`}>
-                      {quantityApplies && <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Qty<input type="number" min="1" value={item.quantity} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, quantity: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>}
-                      <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Name<input type="text" value={item.name} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, name: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Price<input type="number" min="0" step="0.01" value={item.cost} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, cost: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>
-                      <button type="button" disabled={editItems.length === 1} onClick={() => setEditItems((items) => items.filter((_, i) => i !== index))} className="self-end rounded-xl p-2.5 text-rose-500 disabled:opacity-30" aria-label="Remove transaction"><X size={16} /></button>
-                    </div>
+                    {newLogType === 'income' ? (
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_minmax(140px,0.8fr)_auto]">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Description<input type="text" value={item.name || item.text || ''} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, name: e.target.value, text: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Amount<input type="number" min="0" step="0.01" inputMode="decimal" value={item.cost} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, cost: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Account<select value={item.accountId || newLogAccountId} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, accountId: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white">{(data.accounts || []).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+                        <button type="button" disabled={editItems.length === 1} onClick={() => setEditItems((items) => items.filter((_, i) => i !== index))} className="self-end rounded-xl p-2.5 text-rose-500 disabled:opacity-30" aria-label="Remove income"><X size={16} /></button>
+                      </div>
+                    ) : (
+                      <div className={`grid gap-3 ${quantityApplies ? 'sm:grid-cols-[90px_minmax(0,1fr)_130px_auto]' : 'sm:grid-cols-[minmax(0,1fr)_130px_auto]'}`}>
+                        {quantityApplies && <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Qty<input type="number" min="1" value={item.quantity} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, quantity: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>}
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Name<input type="text" value={item.name} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, name: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-400">Price<input type="number" min="0" step="0.01" inputMode="decimal" value={item.cost} onChange={(e) => setEditItems((items) => items.map((x, i) => i === index ? { ...x, cost: e.target.value } : x))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white p-2.5 text-sm font-semibold dark:border-stone-700 dark:bg-stone-900 dark:text-white" /></label>
+                        <button type="button" disabled={editItems.length === 1} onClick={() => setEditItems((items) => items.filter((_, i) => i !== index))} className="self-end rounded-xl p-2.5 text-rose-500 disabled:opacity-30" aria-label="Remove transaction"><X size={16} /></button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div className="rounded-2xl bg-stone-100 p-3 text-right text-xs font-black dark:bg-stone-950">Group total: ₱{editItems.reduce((sum, item) => sum + (Number(item.cost) || 0), 0).toLocaleString()}</div>
@@ -810,7 +893,7 @@ function MainApp() {
         )}
 
         <div className="flex min-w-0 gap-2">
-          <button type="button" onClick={addDailyLog} className="min-h-12 min-w-0 flex-1 rounded-2xl bg-stone-900 px-4 text-sm font-black text-white shadow-md transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-900">{editingLogId ? 'Save changes' : 'Add transaction'}</button>
+          <button type="button" disabled={!data.accounts?.length} onClick={addDailyLog} className="min-h-12 min-w-0 flex-1 rounded-2xl bg-stone-900 px-4 text-sm font-black text-white shadow-md transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-stone-100 dark:text-stone-900">{editingLogId ? 'Save changes' : 'Add transaction'}</button>
           {editingLogId && <button type="button" onClick={closeTransactionForm} className="min-h-12 shrink-0 rounded-2xl bg-stone-100 px-4 text-sm font-black text-stone-600 dark:bg-stone-800 dark:text-stone-300">Cancel</button>}
         </div>
       </div>
@@ -895,17 +978,35 @@ function MainApp() {
         {displayLogs.length === 0 ? (
           <div className="rounded-2xl border-2 border-dashed border-stone-200 py-12 text-center text-sm font-semibold text-stone-400 dark:border-stone-800">No transactions found for this view.</div>
         ) : (
-          <div className="min-w-0 max-w-full space-y-2 overflow-hidden">
-            {displayLogs.map((log) => <SwipeableLogItem key={log.id} log={log} onEdit={handleEditLogClick} onDelete={requestDeleteTransaction} />)}
-          </div>
+          <>
+            <div className="min-w-0 max-w-full space-y-2 overflow-hidden">
+              {paginatedLogs.map((log) => <SwipeableLogItem key={log.id} log={log} onEdit={handleEditLogClick} onDelete={requestDeleteTransaction} />)}
+            </div>
+            {totalLogPages > 1 && (
+            <div className="mt-5 flex items-center justify-between gap-3 border-t border-stone-100 pt-4 dark:border-stone-800">
+              <button type="button" disabled={safeLogPage === 1} onClick={() => setLogPage((p) => Math.max(1, p - 1))} className="min-h-10 rounded-xl bg-stone-100 px-3 text-xs font-black text-stone-600 disabled:opacity-40 dark:bg-stone-800 dark:text-stone-300">Previous</button>
+              <div className="flex items-center gap-1.5" aria-label="Transaction pages">
+                {Array.from({ length: totalLogPages }, (_, i) => i + 1).map((page) => (
+                  <button key={page} type="button" onClick={() => setLogPage(page)} className={`h-9 min-w-9 rounded-xl px-2 text-xs font-black ${safeLogPage === page ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900' : 'bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-300'}`}>{page}</button>
+                ))}
+              </div>
+              <button type="button" disabled={safeLogPage === totalLogPages} onClick={() => setLogPage((p) => Math.min(totalLogPages, p + 1))} className="min-h-10 rounded-xl bg-stone-100 px-3 text-xs font-black text-stone-600 disabled:opacity-40 dark:bg-stone-800 dark:text-stone-300">Next</button>
+            </div>
+            )}
+          </>
         )}
       </Card>
     </div>
   );
 
   const renderBillForm = () => (
-    <Card className="p-5">
-      <SectionTitle icon={editingBill ? Edit : Plus} title={editingBill ? 'Edit bill' : 'Add bill'} subtitle="Recurring or installment obligations." />
+    <Card className="overflow-hidden border-stone-200 p-0 dark:border-stone-800">
+      <div className="border-b border-stone-100 bg-stone-50/80 px-5 py-4 dark:border-stone-800 dark:bg-stone-950/70">
+        <div className="flex items-center justify-between gap-3">
+          <SectionTitle icon={editingBill ? Edit : Plus} title={editingBill ? 'Edit bill' : 'Add a bill'} subtitle={editingBill ? 'Update the schedule without changing existing payment dates.' : 'Set the amount, due date, and duration.'} />
+          <button type="button" onClick={() => { setIsAddingBill(false); setEditingBill(null); }} className="rounded-xl p-2 text-stone-400 transition hover:bg-white hover:text-stone-800 dark:hover:bg-stone-900 dark:hover:text-white" aria-label="Close bill form"><X size={19} /></button>
+        </div>
+      </div>
       <form onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -915,24 +1016,16 @@ function MainApp() {
           totalInstallments: Number(fd.get('months') || 0),
           dueDate: Number(fd.get('due') || 1),
         };
-        if (!billData.name || billData.amount <= 0 || billData.totalInstallments <= 0) {
-          showNotification('Failed: complete the bill details with valid values.', 'error');
+        if (!billData.name || billData.amount <= 0 || billData.totalInstallments <= 0 || billData.dueDate < 1 || billData.dueDate > 31) {
+          showNotification('Failed: enter valid bill details.', 'error');
           return;
         }
         setData((prev) => {
           if (editingBill) {
             const updatedBills = prev.bills.map((b) => b.id === editingBill.id ? { ...b, ...billData } : b);
-            const updatedLogs = prev.dailyLogs.map((log) => {
-              if (!log.isBillAutoTransaction || log.billId !== editingBill.id) return log;
-              const billRecordMonth = log.billRecordKey?.split('-').slice(1).join('-') || currentViewMonth;
-              return {
-                ...log,
-                text: `${billData.name} ${Number(billData.amount || 0).toLocaleString()}`,
-                cost: Number(billData.amount || 0),
-                date: getBillTransactionDate(billRecordMonth, billData.dueDate),
-                category: 'Bill',
-              };
-            });
+            const updatedLogs = prev.dailyLogs.map((log) => !log.isBillAutoTransaction || log.billId !== editingBill.id
+              ? log
+              : { ...log, text: `${billData.name} ${Number(billData.amount).toLocaleString()}`, cost: Number(billData.amount), category: 'Bill' });
             return { ...prev, bills: updatedBills, dailyLogs: updatedLogs };
           }
           return { ...prev, bills: [...prev.bills, { id: Date.now(), startMonth: currentViewMonth, ...billData }] };
@@ -940,14 +1033,23 @@ function MainApp() {
         setEditingBill(null);
         setIsAddingBill(false);
         showNotification(editingBill ? 'Bill successfully edited.' : 'Bill successfully added.');
-      }} className="space-y-4">
-        <label className="block text-xs font-black uppercase tracking-wider text-stone-400">Bill name<input name="name" required defaultValue={editingBill?.name || ''} placeholder="e.g. Rent" className="mt-2 w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm font-semibold dark:border-stone-700 dark:bg-stone-950 dark:text-white" /></label>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="text-xs font-black uppercase tracking-wider text-stone-400">Monthly amount<input name="amount" required type="number" defaultValue={editingBill?.amount || ''} className="mt-2 w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm font-semibold dark:border-stone-700 dark:bg-stone-950 dark:text-white" /></label>
-          <label className="text-xs font-black uppercase tracking-wider text-stone-400">Due day<input name="due" required type="number" min="1" max="31" defaultValue={editingBill?.dueDate || ''} className="mt-2 w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm font-semibold dark:border-stone-700 dark:bg-stone-950 dark:text-white" /></label>
-          <label className="text-xs font-black uppercase tracking-wider text-stone-400">Duration<input name="months" required type="number" min="1" defaultValue={editingBill?.totalInstallments || ''} placeholder="999 = recurring" className="mt-2 w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm font-semibold dark:border-stone-700 dark:bg-stone-950 dark:text-white" /></label>
+      }} className="space-y-4 p-5">
+        <label className="block text-xs font-black uppercase tracking-wider text-stone-400">Bill name
+          <input name="name" required defaultValue={editingBill?.name || ''} placeholder="e.g. Rent, Internet, Phone" className="mt-2 block w-full rounded-2xl border border-stone-200 bg-white p-3.5 text-sm font-semibold outline-none transition focus:border-yellow-400 dark:border-stone-700 dark:bg-stone-950 dark:text-white" />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="text-xs font-black uppercase tracking-wider text-stone-400">Amount
+            <div className="relative mt-2"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-stone-400">₱</span><input name="amount" required type="number" min="0.01" step="0.01" inputMode="decimal" defaultValue={editingBill?.amount || ''} placeholder="0.00" className="block w-full rounded-2xl border border-stone-200 bg-white py-3.5 pl-8 pr-3 text-sm font-semibold outline-none transition focus:border-yellow-400 dark:border-stone-700 dark:bg-stone-950 dark:text-white" /></div>
+          </label>
+          <label className="text-xs font-black uppercase tracking-wider text-stone-400">Due day
+            <input name="due" required type="number" min="1" max="31" inputMode="numeric" defaultValue={editingBill?.dueDate || ''} placeholder="1–31" className="mt-2 block w-full rounded-2xl border border-stone-200 bg-white p-3.5 text-sm font-semibold outline-none transition focus:border-yellow-400 dark:border-stone-700 dark:bg-stone-950 dark:text-white" />
+          </label>
+          <label className="text-xs font-black uppercase tracking-wider text-stone-400">Duration
+            <input name="months" required type="number" min="1" inputMode="numeric" defaultValue={editingBill?.totalInstallments || ''} placeholder="Months" className="mt-2 block w-full rounded-2xl border border-stone-200 bg-white p-3.5 text-sm font-semibold outline-none transition focus:border-yellow-400 dark:border-stone-700 dark:bg-stone-950 dark:text-white" />
+          </label>
         </div>
-        <div className="flex gap-2"><button type="submit" className="min-h-12 flex-1 rounded-2xl bg-stone-900 text-sm font-black text-white dark:bg-stone-100 dark:text-stone-900">{editingBill ? 'Save changes' : 'Add bill'}</button><button type="button" onClick={() => { setIsAddingBill(false); setEditingBill(null); }} className="min-h-12 rounded-2xl bg-stone-100 px-5 text-sm font-black text-stone-600 dark:bg-stone-800 dark:text-stone-300">Cancel</button></div>
+        <div className="rounded-2xl bg-amber-50 px-4 py-3 text-xs font-semibold leading-5 text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">New bills start in <span className="font-black">{getMonthName(currentViewMonth)}</span>. A payment is recorded using the actual day you mark the bill as paid.</div>
+        <div className="flex gap-2 pt-1"><button type="submit" className="min-h-12 flex-1 rounded-2xl bg-stone-900 px-4 text-sm font-black text-white shadow-sm transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-900">{editingBill ? 'Save changes' : 'Add bill'}</button><button type="button" onClick={() => { setIsAddingBill(false); setEditingBill(null); }} className="min-h-12 rounded-2xl bg-stone-100 px-5 text-sm font-black text-stone-600 dark:bg-stone-800 dark:text-stone-300">Cancel</button></div>
       </form>
     </Card>
   );
@@ -971,23 +1073,7 @@ function MainApp() {
 
   const renderProgress = () => (
     <div className="space-y-5">
-      {renderDebtProgress(false)}
-      <Card className="p-5 sm:p-6">
-        <SectionTitle icon={Trophy} title="Daily progress" subtitle="Keep your streak action in one dedicated place." />
-        <SwipeableHabitTracker habit={data.habit} onIncrement={handleIncrementHabit} onReset={handleResetHabit} />
-      </Card>
-      <Card className="p-5 sm:p-6">
-        <SectionTitle icon={Wallet} title="Financial progress" subtitle="A simple snapshot of where the month stands." />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-950/20"><div className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Remaining funds</div><div className="mt-2 text-3xl font-black text-emerald-700 dark:text-emerald-400">₱{Math.max(0, actualLeftover).toLocaleString()}</div></div>
-          <div className="rounded-2xl bg-rose-50 p-4 dark:bg-rose-950/20"><div className="text-[10px] font-black uppercase tracking-widest text-rose-700 dark:text-rose-400">Debt remaining</div><div className="mt-2 text-3xl font-black text-rose-700 dark:text-rose-400">₱{grandTotalDebt.toLocaleString()}</div></div>
-        </div>
-      </Card>
-      <Card className="p-5 sm:p-6">
-        <SectionTitle icon={Info} title="Debt breakdown" />
-        <button onClick={() => setShowDebtBreakdown((v) => !v)} className="flex min-h-11 w-full items-center justify-between rounded-2xl bg-stone-50 px-4 text-left dark:bg-stone-950"><span className="text-sm font-black">{showDebtBreakdown ? 'Hide details' : 'Show details'}</span><span className="text-stone-400">{showDebtBreakdown ? '−' : '+'}</span></button>
-        {showDebtBreakdown && <div className="mt-3 space-y-2">{debtBreakdown.length === 0 ? <div className="text-sm font-semibold text-emerald-500">No remaining term debt.</div> : debtBreakdown.map((item) => <div key={item.id} className="flex justify-between rounded-2xl border border-stone-100 p-3 text-sm dark:border-stone-800"><span className="font-bold">{item.name}<span className="ml-2 text-xs font-medium text-stone-400">{item.remainingCount} left × ₱{item.amount}</span></span><span className="font-black text-rose-500">₱{item.totalRemainingAmount.toLocaleString()}</span></div>)}</div>}
-      </Card>
+      <FinanceHub data={data} setData={setData} currentViewMonth={currentViewMonth} changeMonth={changeMonth} getMonthName={getMonthName} currentMonthLogs={currentMonthLogs} showNotification={showNotification} activeBills={activeBills} />
     </div>
   );
 
